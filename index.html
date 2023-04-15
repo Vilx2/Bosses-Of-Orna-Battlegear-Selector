@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8"/>
+	<title>Orna Boss gear selector</title>
+	<style type="text/css">
+		#error {
+			color:red;
+		}
+		#combos table td, 
+		#combos table th {
+			vertical-align: top;
+		}
+		#combos td > div {
+			border: 1px solid black;
+			border-radius: 5px;
+			margin: 13px 3px 3px 3px;
+			padding: 13px 3px 3px 3px;
+			position: relative;
+		}
+		#combos td > div.bad {
+			background-color: #CCC;
+			color: gray;
+		}
+		#combos td > div > div.op {
+			position: absolute;
+			top: -10px; left: 10px;
+			background-color: white;
+			font-size: smaller;
+		}
+		#combos .include,
+		#combos .exclude {
+			cursor: pointer;
+			opacity: 0.25;
+		}
+		#combos .include.active,
+		#combos .exclude.active {
+			opacity: 1;
+		}		
+	</style>
+</head>
+<body>
+	<div id="loader">Please wait, loading...</div>
+	<div id="workspace" style="display: none">
+		<div>
+			<label>
+				Maxiumum equipment tier:
+				<select id="equipmentTier">
+					<option value="1">★ (level 1 - 24)</option>
+					<option value="2">★★ (level 25 - 49)</option>
+					<option value="3">★★★ (level 50 - 74)</option>
+					<option value="4">★4 (level 75 - 99)</option>
+					<option value="5">★5 (level 100 - 124)</option>
+					<option value="6">★6 (level 125 - 149)</option>
+					<option value="7">★7 (level 150 - 174)</option>
+					<option value="8">★8 (level 175 - 199)</option>
+					<option value="9">★9 (level 200 - 224)</option>
+					<option value="10" selected>★10 (level 225 - 250)</option>
+				</select>
+			</label>
+		</div>
+		<div id="classLimits">Equippable by:</div>
+		<div><label>Select boss: <select id="boss"></select></label></div>
+		<div id="afflictions"></div>
+		<div id="combos"></div>
+	</div>
+	<div id="error"></div>
+
+	<script>
+		(function() {
+
+			let bossMap, skillMap, itemsByType, afflictionCheckboxes, searchResults;
+
+			function formatStars(tier) {
+				if ( tier == 1 ) {
+					return '★';
+				}
+				if ( tier == 2 ) {
+					return '★★';
+				}
+				if ( tier == 3 ) {
+					return '★★';
+				}
+				return '★' + tier;
+			}
+			function formatItemName(item){
+				return item.name + " ("+formatStars(item.tier)+")";
+			}
+			
+			function showResults() {
+
+				const combos = document.getElementById("combos");
+				if ( !searchResults ) {
+					combos.innerHTML = "No possible equipment combinations found!";
+					return;
+				}
+
+				combos.innerHTML = "";
+
+				const table = document.createElement('table');
+				const thead = document.createElement('thead');
+				table.appendChild(thead);
+				const headRow = document.createElement('tr');
+				thead.appendChild(headRow);
+
+				const tbody = document.createElement('tbody');
+				table.appendChild(tbody);
+				const bodyRow = document.createElement('tr');
+				tbody.appendChild(bodyRow);
+				const disabledRow = document.createElement('tr');
+				disabledRow.className = 'disabled';
+				tbody.appendChild(disabledRow);
+
+
+				const slotCount = searchResults.slots.length;
+
+				for ( let slot of searchResults.slots ) {
+					slot.goodSets.clear();
+				}
+				for (let combo of searchResults.foundCombinations) {
+					let isGood = true;
+					for ( let i = 0; i < slotCount; i++ ) {
+						let groupId =  String(combo[i] === undefined ? -i-1 : combo[i].id);
+						if ( searchResults.slots[i].include.size > 0 && !searchResults.slots[i].include.has(groupId) ) {
+							isGood = false;
+							break;
+						} else if ( searchResults.slots[i].exclude.has(groupId)) {
+							isGood = false;
+							break;
+						}
+					}
+					if ( isGood ) {
+						for (let i = 0; i < slotCount; i++) {
+							searchResults.slots[i].goodSets.add(combo[i] === undefined ? -i-1 : combo[i].id);
+						}
+					}
+				}
+
+				for (let i = 0; i < slotCount; i++ ) {
+					const slot = searchResults.slots[i];
+
+					const headCell = document.createElement('th');
+					headCell.textContent = slot.name;
+					headRow.appendChild(headCell);
+
+					const bodyCell = document.createElement('td');
+					bodyRow.appendChild(bodyCell);
+
+					const disabledCell = document.createElement('td');
+					disabledRow.appendChild(disabledCell);
+
+					const itemGroupSet = new Set();
+					const emptyGroup = {
+						id: -i-1,
+						mask: 0,
+						names: ["[None]"]
+					}
+					for ( let combo of searchResults.foundCombinations ) {
+						itemGroupSet.add( combo[i] || emptyGroup);
+					}
+
+					const sortedGroups = Array.from(itemGroupSet).sort((a,b)=>a.mask-b.mask);
+
+					for (let group of sortedGroups) {
+						const div = document.createElement('div');
+						const groupId = String(group.id);
+						if ( !slot.goodSets.has(group.id) ) {
+							div.className = "bad";
+						}
+
+
+						const divOp = document.createElement('div');
+						divOp.className ="op";
+					
+						const spanInclude = document.createElement("span");
+						spanInclude.className = "include" + (slot.include.has(groupId) ? " active" : "");
+						spanInclude.dataset.slot = i;
+						spanInclude.dataset.groupId = groupId;
+						spanInclude.textContent = "✅";
+						spanInclude.title = `Disable combinations with other items in '${slot.name}'`;
+						divOp.appendChild(spanInclude);
+						
+						const spanExclude = document.createElement("span");
+						spanExclude.className = "exclude" + (slot.exclude.has(groupId) ? " active" : "");
+						spanExclude.dataset.slot = i;
+						spanExclude.dataset.groupId = groupId;
+						spanExclude.textContent = "❌";
+						spanExclude.title = `Disable combinations with these items in '${slot.name}'`;
+						divOp.appendChild(spanExclude);
+
+						div.appendChild(divOp);
+
+						for ( let name of group.names ) {
+							const div2 = document.createElement('div');
+							div2.appendChild(document.createTextNode(name));
+							div.appendChild(div2);
+						}
+						
+
+						bodyCell.appendChild(div);
+						
+					}
+				}
+
+
+				combos.appendChild(table);
+			}
+			
+			function recursiveSearch(searchState, slotIndex) {
+				const slot = searchState.slots[slotIndex];
+				const originalSearchPositions = [];
+				const originalMask = searchState.currentMask;
+
+				for ( let itemType of slot.itemTypes ) {
+					const itemGroups = searchState.itemGroupsByType.get(itemType);
+					originalSearchPositions.push(itemGroups.searchPosition);
+
+					for( ; itemGroups.searchPosition < itemGroups.groups.length; itemGroups.searchPosition++ ) {
+						const itemGroup = itemGroups.groups[itemGroups.searchPosition];
+						const newMask = itemGroup.mask | originalMask;
+						if (newMask == originalMask) {
+							continue;
+						}
+						if ( itemGroup.twoHanded && slotIndex != 0 ) {
+							continue;
+						}
+
+						let isGood = true;
+						for (let i = slotIndex-1; i >= 0; i--) {
+							if (searchState.slots[i].selectedGroup !== undefined && (searchState.slots[i].selectedGroup.mask | itemGroup.mask) == itemGroup.mask) {
+								isGood = false;
+								break;
+							}
+						}
+						if (!isGood) {
+							continue;
+						}
+
+						slot.selectedGroup = itemGroup;
+						if (newMask == searchState.fullMask) {
+							searchState.foundCombinations.push(searchState.slots.map(x=>x.selectedGroup))
+						} else if (slotIndex+1 < searchState.slots.length) {
+							searchState.currentMask = newMask;
+							recursiveSearch(searchState, slotIndex == 0 && itemGroup.twoHanded ? slotIndex + 2 : slotIndex+1);
+						}
+					}
+				}
+				
+				slot.selectedGroup = undefined;
+				searchState.currentMask = originalMask;
+				
+				if(slotIndex + 1 < searchState.slots.length) {
+					recursiveSearch(searchState, slotIndex + 1);
+				}
+
+				for ( let i = 0; i < slot.itemTypes.length; i++ ) {
+					searchState.itemGroupsByType.get(slot.itemTypes[i]).searchPosition = originalSearchPositions[i];
+				}
+			}
+
+			function calculateCombinations() {
+				if ( !afflictionCheckboxes ) {
+					return;
+				}
+				const effectsMap = new Map();
+				let i = 1;
+				for ( let cb of afflictionCheckboxes ) {
+					if ( cb.checked ) {
+						effectsMap.set(cb.value, i);
+						i = i*2;
+					}
+				}
+				if ( effectsMap.size < 1 ) {
+					searchResults = undefined;
+					return;
+				}
+				
+				const fullMask = i-1;
+				const itemGroupsByType = new Map();
+				let idCounter = 1;
+				
+				const maxTier = parseInt(document.getElementById("equipmentTier").value);
+				const equipTypes = new Set();
+				for ( let cb of document.querySelectorAll("#classLimits input") ) {
+					if ( cb.checked ) {
+						equipTypes.add(parseInt(cb.value));
+					}
+				}
+		
+				for ( let [itemType, itemArray] of itemsByType ) {
+					const itemGroups = {
+						searchPosition: 0,
+						groups: []
+					};
+					const groupCache = new Map();
+					const twoHandedGroupCache = new Map();
+
+					itemGroupsByType.set(itemType, itemGroups);
+					
+					for ( let item of itemArray) {
+						const itemVal = item.prevents.reduce((acc, cur)=> {
+							const mask = effectsMap.get(cur);
+							return mask === undefined ? acc : (acc | mask);
+						}, 0);
+						if ( itemVal == 0 || item.tier > maxTier) {
+							continue;
+						}
+						if ( item.equipped_by && !item.equipped_by.some(type=>equipTypes.has(type.id)) ) {
+							continue;
+						}
+						const isTwoHanded = !!item.twoHanded;
+						let itemGroup = ( isTwoHanded ? twoHandedGroupCache : groupCache).get(itemVal);
+						if ( itemGroup ) {
+							itemGroup.names.push(formatItemName(item));
+						} else {
+							itemGroup = {
+								id: idCounter++,
+								mask: itemVal,
+								twoHanded: isTwoHanded,
+								names: [formatItemName(item)]
+							};
+							groupCache.set(itemVal, itemGroup);
+							itemGroups.groups.push(itemGroup);
+						}
+					}
+				}
+
+				const searchState = 
+				{
+					fullMask: fullMask,
+					itemGroupsByType: itemGroupsByType,
+					currentMask: 0,
+					foundCombinations: [],
+					slots: [
+						{
+							name: "Weapon",
+							itemTypes: ["Weapon"],
+							selectedGroup: undefined
+						}, {
+							name: "Off-hand",
+							itemTypes: ["Off-hand", "Weapon"],
+							selectedGroup: undefined
+						}, {
+							name: "Head",
+							itemTypes: ["Head"],
+							selectedGroup: undefined
+						}, {
+							name: "Armor",
+							itemTypes: ["Armor"],
+							selectedGroup: undefined
+						}, {
+							name: "Legs",
+							itemTypes: ["Legs"],
+							selectedGroup: undefined
+						}, {
+							name: "Accessory 1",
+							itemTypes: ["Accessory"],
+							selectedGroup: undefined
+						}, {
+							name: "Accessory 2",
+							itemTypes: ["Accessory"],
+							selectedGroup: undefined
+						}
+					]
+				};
+				
+				
+				recursiveSearch(searchState, 0);
+
+				if ( searchState.foundCombinations.length < 1 ) {
+					searchResults = undefined;
+				} else {
+					searchResults = {
+						slots: searchState.slots.map(x=>({
+							name: x.name,
+							include: new Set(),
+							exclude: new Set(),
+							goodSets: new Set()
+						})),
+						foundCombinations: searchState.foundCombinations
+					};
+				}
+			}
+			
+			function updateAfflictions() {
+				const boss = bossMap.get(parseInt(document.getElementById('boss').value));
+				const afflictions = document.getElementById("afflictions");
+				const statuses = new Set();
+				
+				afflictions.innerHTML = '';
+				
+				for ( let skillRef of boss.skills ) {
+					const skill = skillMap.get(skillRef.id);
+					if ( skill.causes ) {
+						for ( let status of skill.causes ) {
+							statuses.add(status);
+						}
+					}
+				}
+				
+				afflictionCheckboxes = [];
+				for ( let status of statuses ) {
+					const div = document.createElement("div");
+					const label = document.createElement("label");
+					const chk = document.createElement("input");
+					chk.value = status;
+					chk.type="checkbox";
+					chk.checked = true;
+					label.appendChild(chk);
+					label.appendChild(document.createTextNode(status));
+					div.appendChild(label);
+					afflictions.appendChild(div);
+					
+					afflictionCheckboxes.push(chk);				
+				}				
+			}
+
+
+			function onCombosClick(e) {
+				if ( e.target.classList.contains("include") ) {
+					const groupId = e.target.dataset.groupId;
+					const slot = parseInt(e.target.dataset.slot);
+					if ( e.target.classList.contains("active") ) {
+						searchResults.slots[slot].include.delete(groupId);
+					} else {
+						searchResults.slots[slot].include.add(groupId);
+						searchResults.slots[slot].exclude.delete(groupId);
+					}
+					showResults();
+				} else if ( e.target.classList.contains("exclude") ) {
+					const groupId = e.target.dataset.groupId;
+					const slot = parseInt(e.target.dataset.slot);
+					if (e.target.classList.contains("active")) {
+						searchResults.slots[slot].exclude.delete(groupId);
+					} else {
+						searchResults.slots[slot].exclude.add(groupId);
+						searchResults.slots[slot].include.delete(groupId);
+					}
+					showResults();
+				}
+			}
+
+			function onRestrictionsChange() {
+				calculateCombinations();
+				showResults();
+			}
+
+			function onBossChange() {
+				updateAfflictions();
+				calculateCombinations();
+				showResults();
+			}
+		
+			async function getItem(url) {
+				const dataResponse = await fetch(url);
+				if ( !dataResponse.ok ) {
+					throw `HTTP error ${dataResponse.status} on '${url}': ${dataResponse.statusText}`
+				}
+				return await dataResponse.json();
+			}
+			async function load() {
+				try {
+					const requests = [
+						getItem('AllItems.json'),
+						getItem('AllBosses.json'),
+						getItem('AllSkills.json')
+					];
+					
+					const [itemArray, bossArray, skillArray] = await Promise.all(requests);				
+					bossMap = new Map(bossArray.map(x=>[x.id, x]));
+					skillMap = new Map(skillArray.map(x=>[x.id, x]));
+								
+					itemsByType = new Map([
+						["Off-hand", []],
+						["Weapon", []],
+						["Head", []],
+						["Armor", []],
+						["Legs", []],
+						["Accessory", []]
+					]);
+
+					const equipBy = new Map();
+					
+					for ( let item of itemArray ) {
+						if ( item.prevents && item.prevents.length > 0 ) {
+							const slot = itemsByType.get(item.type);
+							if ( slot ) {
+								slot.push(item);
+							}
+						}
+						if ( item.equipped_by ) {
+							for ( let e of item.equipped_by ) {
+								equipBy.set(e.id, e.name);
+							}
+						}
+					}
+					
+					bossArray.sort((a,b)=>a.name.localeCompare(b.name));
+					const selBoss = document.getElementById('boss');
+					for ( let boss of bossArray ) {
+						const opt = document.createElement('option');
+						opt.value=boss.id;
+						opt.textContent = boss.name + ' (' + formatStars(boss.tier) + ')';
+						selBoss.appendChild(opt);
+					}
+					selBoss.selectedIndex = -1;
+
+					const classLimits = document.getElementById("classLimits");
+					for ( let [id, name] of equipBy ) {
+						const label = document.createElement("label");
+						const checkbox = document.createElement("input");
+						checkbox.type = "checkbox";
+						checkbox.value = String(id);
+						checkbox.checked = true;
+						label.appendChild(checkbox);
+						label.appendChild(document.createTextNode(name));
+						classLimits.appendChild(document.createTextNode(" "));
+						classLimits.appendChild(label);						
+					}
+					
+					selBoss.addEventListener('change', onBossChange);
+					classLimits.addEventListener('change', onRestrictionsChange);
+					document.getElementById("afflictions").addEventListener('change', onRestrictionsChange);
+					document.getElementById("equipmentTier").addEventListener('change', onRestrictionsChange);
+					document.getElementById("combos").addEventListener('click', onCombosClick);
+					
+					document.getElementById('loader').style.display='none';
+					document.getElementById('workspace').style.display='';					
+				} catch (e) {
+					document.getElementById('loader').style.display='none';
+					document.getElementById('error').textContent = "Error loading: " + e;
+					document.getElementById('error').style.display='';
+				}			
+			}
+			load();
+		})();
+	</script>
+</body>
