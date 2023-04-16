@@ -109,7 +109,7 @@
 	<script>
 		(function() {
 
-			let bossMap, skillMap, itemsByType, afflictionCheckboxes, searchResults;
+			let bossMap, itemsByType, afflictionCheckboxes, searchResults;
 
 			function formatStars(tier) {
 				if ( tier == 1 ) {
@@ -425,21 +425,11 @@
 			function updateAfflictions() {
 				const boss = bossMap.get(parseInt(document.getElementById('boss').value));
 				const afflictions = document.getElementById("afflictions");
-				const statuses = new Set();
 				
 				afflictions.innerHTML = '';
 				
-				for ( let skillRef of boss.skills ) {
-					const skill = skillMap.get(skillRef.id);
-					if ( skill.causes ) {
-						for ( let status of skill.causes ) {
-							statuses.add(status);
-						}
-					}
-				}
-				
 				afflictionCheckboxes = [];
-				for ( let status of statuses ) {
+				for ( let status of boss.causes ) {
 					const div = document.createElement("div");
 					const label = document.createElement("label");
 					const chk = document.createElement("input");
@@ -496,55 +486,35 @@
 			}
 		
 			async function getItem(url) {
-				const dataResponse = await fetch(url);
-				if ( !dataResponse.ok ) {
-					throw `HTTP error ${dataResponse.status} on '${url}': ${dataResponse.statusText}`
-				}
-				return await dataResponse.json();
 			}
 			async function load() {
 				try {
-					const requests = [
-						getItem('AllItems.json'),
-						getItem('AllBosses.json'),
-						getItem('AllSkills.json')
-					];
+					const dataResponse = await fetch("Data.json");
+					if (!dataResponse.ok) {
+						throw `HTTP error ${dataResponse.status} on '${url}': ${dataResponse.statusText}`
+					}
+					const data = await dataResponse.json();
 					
-					const [itemArray, bossArray, skillArray] = await Promise.all(requests);				
-					bossMap = new Map(bossArray.map(x=>[x.id, x]));
-					skillMap = new Map(skillArray.map(x=>[x.id, x]));
+					bossMap = new Map(data.bosses);
+					itemsByType = new Map(data.items);
 								
-					itemsByType = new Map([
-						["Off-hand", []],
-						["Weapon", []],
-						["Head", []],
-						["Armor", []],
-						["Legs", []],
-						["Accessory", []]
-					]);
-
 					const equipBy = new Map();
 					
-					for ( let item of itemArray ) {
-						if ( item.prevents && item.prevents.length > 0 ) {
-							const slot = itemsByType.get(item.type);
-							if ( slot ) {
-								slot.push(item);
-							}
-						}
-						if ( item.equipped_by ) {
-							for ( let e of item.equipped_by ) {
-								equipBy.set(e.id, e.name);
+					for ( let slot of itemsByType ) {
+						for ( let item of slot[1] ) {
+							if ( item.equipped_by ) {
+								for ( let e of item.equipped_by ) {
+									equipBy.set(e.id, e.name);
+								}
 							}
 						}
 					}
 					
-					bossArray.sort((a,b)=>a.name.localeCompare(b.name));
 					const selBoss = document.getElementById('boss');
-					for ( let boss of bossArray ) {
+					for ( let boss of data.bosses ) {
 						const opt = document.createElement('option');
-						opt.value=boss.id;
-						opt.textContent = boss.name + ' (' + formatStars(boss.tier) + ')';
+						opt.value=boss[0];
+						opt.textContent = boss[1].name + ' (' + formatStars(boss[1].tier) + ')';
 						selBoss.appendChild(opt);
 					}
 					selBoss.selectedIndex = -1;
@@ -580,5 +550,95 @@
 			}
 			load();
 		})();
+		// This function is meant to be called manually. It fetches fresh data from Orna.Guide API and cleans it up, leaving only the interesting parts. They are heavily taxing on the API and will
+		// run for a minute or so - so please don't use them often. (That is also the reason why this function is so buried. If you can run it, you probably also know enough to call the API directly
+		/// and are no less of a danger to it than without this function)
+		async function downloadData() {
+			try {
+				console.log("Fetching boss data...");
+				let response = await fetch("https://orna.guide/api/v1/monster", {
+					method: "POST",
+					headers: {"Content-Type": "application/json"},
+					body: '{"boss":true}',
+				});
+				const allBosses = await response.json();
+				console.log(`Fetched ${allBosses.length} bosses! Fetching skill data...`);
+				response = await fetch("https://orna.guide/api/v1/skill", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: '{}',
+				});
+				const allSkills = await response.json();
+				console.log(`Fetched ${allSkills.length} skills! Fetching item data...`);
+				response = await fetch("https://orna.guide/api/v1/item", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: '{}',
+				});
+				const allItems = await response.json();
+				console.log(`Fetched ${allItems.length} items! Generating output...`)
+
+				const skillMap = new Map(allSkills.map(x => [x.id, x]));
+				const bossOutput = [];
+				for ( let boss of allBosses ) {
+					const statuses = new Set();
+
+					if ( boss.skills ) {
+						for (let skillRef of boss.skills) {
+							const skill = skillMap.get(skillRef.id);
+							if (skill.causes) {
+								for (let status of skill.causes) {
+									statuses.add(status);
+								}
+							}
+						}
+					}
+					bossOutput.push([boss.id, {
+						name: boss.name,
+						tier: boss.tier,
+						causes: Array.from(statuses)
+					}]);
+				}
+
+				const itemsByType = new Map([
+					["Off-hand", []],
+					["Weapon", []],
+					["Head", []],
+					["Armor", []],
+					["Legs", []],
+					["Accessory", []]
+				]);
+
+				for (let item of allItems) {
+					if (item.prevents && item.prevents.length > 0) {
+						const slot = itemsByType.get(item.type);
+						if (slot) {
+							slot.push({
+								name: item.name,
+								tier: item.tier,
+								prevents: item.prevents,
+								equipped_by: item.equipped_by,
+								two_handed: item.two_handed ? item.two_handed : undefined,
+							});
+						}
+					}
+				}
+				const itemOutput = Array.from(itemsByType);
+
+				// Stabilize output
+				bossOutput.sort((a,b)=> a[1].name.localeCompare(b[1].name));
+				for ( let x of itemOutput ) {
+					x[1].sort((a, b) => a.name.localeCompare(b.name));
+				}
+
+				const output = {
+					bosses: bossOutput,
+					items: itemOutput
+				};
+				console.log(JSON.stringify(output));
+			} catch (error) {
+				console.error("Error:", error);
+			}
+		}
 	</script>
 </body>
