@@ -36,12 +36,52 @@
 		#combos .include.active,
 		#combos .exclude.active {
 			opacity: 1;
-		}		
+		}
+		#tutorial {
+			display: none;
+		}
+		#tutorial-show span {
+			cursor: pointer;
+			color: blue;
+			text-decoration: underline;
+		}
 	</style>
 </head>
 <body>
 	<div id="loader">Please wait, loading...</div>
 	<div id="workspace" style="display: none">
+		<div id="tutorial-show"><span id="tutorial-show-link">How does this work?</span></div>
+		<div id="tutorial">
+			<p>
+				This tool allows you to find an equipment combination that prevents status effects used by bosses.
+				This will be most useful for Raid Bosses since regular bosses are fairly easy to beat anyway.
+				For example, if you're having a hard time fighting Yggdrasil because it always casts Petrify and Def ↓↓ on you, you can use this tool to find some gear that prevents this.
+			</p>
+			<ol>
+				<li>Select the maximum tier of equipment available to you, as well as what equipmenet class restrictions you have.</li>
+				<li>Select the boss that you're trying to find. This will bring up a list of status effects that this boss can inflict upon you as well as a list of equipment</li>
+				<li>
+					If you're having difficulties finding usable gear combination, you can relax the restrictions by unchecking some of the status effects that you're least worried about.
+					The gear list will then refresh abd the new suggestions will not take that statues effect into account.
+				</li>
+				<li>
+					The list of suggested equipment is split into equipment slots, and in each slot items are grouped together in small groups.
+					Items inside each of these groups are functionally equivalent - that is, they offer the exact same protection (from status effects) and are freely interchangeable when selecting your gear.
+					To help narrow down your choices and find workable combinations each of the groups also has two clickable filters available - ✅ and ❌.
+					<ul>
+						<li>
+							Clicking ❌ on a group means that you don't have any of the items in that group (or perhaps you don't want to wear them because of some other considerations).
+							When ❌ is active on a group, that group will be greyed out. Other groups in other slots may also become greyed out. That means that there are no combinations available that would
+							include them, but not the group with ❌.
+						</li>
+						<li>
+							Clicking ✅ on a group means that you're particularly interested in combinations that include items in this group. Other groups in the same slot will become grayed out.
+							Some groups in other slots may also become grayed out because there are no combinations that include them and the group with ✅.
+						</li>
+					</ul>
+				</li>
+			</ol>
+		</div>
 		<div>
 			<label>
 				Maxiumum equipment tier:
@@ -308,7 +348,7 @@
 						if ( item.equipped_by && !item.equipped_by.some(type=>equipTypes.has(type.id)) ) {
 							continue;
 						}
-						const isTwoHanded = !!item.twoHanded;
+						const isTwoHanded = !!item.two_handed;
 						let itemGroup = ( isTwoHanded ? twoHandedGroupCache : groupCache).get(itemVal);
 						if ( itemGroup ) {
 							itemGroup.names.push(formatItemName(item));
@@ -450,6 +490,10 @@
 				calculateCombinations();
 				showResults();
 			}
+			function onTutorialClick() {
+				document.getElementById("tutorial-show").style.display="none";
+				document.getElementById("tutorial").style.display="block";
+			}
 		
 			async function getItem(url) {
 				const dataResponse = await fetch(url);
@@ -523,6 +567,8 @@
 					document.getElementById("afflictions").addEventListener('change', onRestrictionsChange);
 					document.getElementById("equipmentTier").addEventListener('change', onRestrictionsChange);
 					document.getElementById("combos").addEventListener('click', onCombosClick);
+					document.getElementById("tutorial-show-link").addEventListener('click', onTutorialClick);
+					
 					
 					document.getElementById('loader').style.display='none';
 					document.getElementById('workspace').style.display='';					
