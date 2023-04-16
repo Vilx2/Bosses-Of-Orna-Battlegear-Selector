@@ -45,6 +45,11 @@
 			color: blue;
 			text-decoration: underline;
 		}
+		#status {
+			margin: 10px 0;
+			font-weight: bold;
+			font-size: larger;
+		}
 	</style>
 </head>
 <body>
@@ -102,6 +107,7 @@
 		<div id="classLimits">Equippable by:</div>
 		<div><label>Select boss: <select id="boss"></select></label></div>
 		<div id="afflictions"></div>
+		<div id="status"></div>
 		<div id="combos"></div>
 	</div>
 	<div id="error"></div>
@@ -128,14 +134,18 @@
 			}
 			
 			function showResults() {
-
-				const combos = document.getElementById("combos");
-				if ( !searchResults ) {
-					combos.innerHTML = "No possible equipment combinations found!";
+				if (!searchResults) {
 					return;
 				}
+				document.getElementById("status").textContent = searchResults.message;
+
+				const combos = document.getElementById("combos");
 
 				combos.innerHTML = "";
+				
+				if ( !searchResults.success ) {
+					return;
+				}
 
 				const table = document.createElement('table');
 				const thead = document.createElement('thead');
@@ -302,6 +312,15 @@
 				if ( !afflictionCheckboxes ) {
 					return;
 				}
+
+				if ( afflictionCheckboxes.length < 1) {
+					searchResults = {
+						message: "This boss doesn't cause any status effects.",
+						success: false
+					}
+					return;
+				}
+
 				const effectsMap = new Map();
 				let i = 1;
 				for ( let cb of afflictionCheckboxes ) {
@@ -311,7 +330,10 @@
 					}
 				}
 				if ( effectsMap.size < 1 ) {
-					searchResults = undefined;
+					searchResults = {
+						message: "Please select at least one status effect!",
+						success: false
+					}
 					return;
 				}
 				
@@ -408,18 +430,33 @@
 				recursiveSearch(searchState, 0);
 
 				if ( searchState.foundCombinations.length < 1 ) {
-					searchResults = undefined;
-				} else {
 					searchResults = {
-						slots: searchState.slots.map(x=>({
-							name: x.name,
-							include: new Set(),
-							exclude: new Set(),
-							goodSets: new Set()
-						})),
-						foundCombinations: searchState.foundCombinations
-					};
+						message: "There doesn't exist an equipment combination that would protect against all of the selected status effects! Please uncheck some of the status effects to try again.",
+						success: false
+					}
+					return;
 				}
+
+				let combinationCount = 0;
+				for ( let c of searchState.foundCombinations ) {
+					let cnt = 1;
+					for ( let g of c ) {
+						cnt *= (g == undefined ? 1 : g.names.length);
+					}
+					combinationCount += cnt;
+				}
+				
+				searchResults = {
+					message: `Found ${combinationCount > Number.MAX_SAFE_INTEGER ? "approximately ": ""}${combinationCount} viable combinations!`,
+					success: true,
+					slots: searchState.slots.map(x=>({
+						name: x.name,
+						include: new Set(),
+						exclude: new Set(),
+						goodSets: new Set()
+					})),
+					foundCombinations: searchState.foundCombinations
+				};
 			}
 			
 			function updateAfflictions() {
@@ -442,7 +479,7 @@
 					afflictions.appendChild(div);
 					
 					afflictionCheckboxes.push(chk);				
-				}				
+				}
 			}
 
 
