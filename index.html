@@ -22,6 +22,13 @@
 			background-color: #CCC;
 			color: gray;
 		}
+		#combos td > div a {
+			color: #00C;
+		}
+		#combos td > div.bad a {
+			color: gray;
+		}
+
 		#combos td > div > div.op {
 			position: absolute;
 			top: -10px; left: 10px;
@@ -209,7 +216,7 @@
 					const emptyGroup = {
 						id: -i-1,
 						mask: 0,
-						names: ["[None]"]
+						items: [{name: "[None]"}]
 					}
 					for ( let combo of searchResults.foundCombinations ) {
 						itemGroupSet.add( combo[i] || emptyGroup);
@@ -246,9 +253,17 @@
 
 						div.appendChild(divOp);
 
-						for ( let name of group.names ) {
+						for ( let item of group.items ) {
 							const div2 = document.createElement('div');
-							div2.appendChild(document.createTextNode(name));
+							if (item.id === undefined ) {
+								div2.appendChild(document.createTextNode(item.name));
+							} else {
+								const a = document.createElement("a");
+								a.textContent = formatItemName(item);
+								a.href = "https://orna.guide/items?show=" + item.id;
+								a.target = "_blank";
+								div2.append(a);
+							}
 							div.appendChild(div2);
 						}
 						
@@ -379,13 +394,13 @@
 						const isTwoHanded = !!item.two_handed;
 						let itemGroup = ( isTwoHanded ? twoHandedGroupCache : groupCache).get(itemVal);
 						if ( itemGroup ) {
-							itemGroup.names.push(formatItemName(item));
+							itemGroup.items.push(item);
 						} else {
 							itemGroup = {
 								id: idCounter++,
 								mask: itemVal,
 								twoHanded: isTwoHanded,
-								names: [formatItemName(item)]
+								items: [item]
 							};
 							groupCache.set(itemVal, itemGroup);
 							itemGroups.groups.push(itemGroup);
@@ -447,7 +462,7 @@
 				for ( let c of searchState.foundCombinations ) {
 					let cnt = 1;
 					for ( let g of c ) {
-						cnt *= (g == undefined ? 1 : g.names.length);
+						cnt *= (g == undefined ? 1 : g.items.length);
 					}
 					combinationCount += cnt;
 				}
@@ -468,6 +483,8 @@
 			function updateAfflictions() {
 				const boss = bossMap.get(parseInt(document.getElementById('boss').value));
 				const afflictions = document.getElementById("afflictions");
+				const defaultChecked = !boss.unselected;
+				
 				
 				afflictions.innerHTML = '';
 				
@@ -478,7 +495,7 @@
 					const chk = document.createElement("input");
 					chk.value = status;
 					chk.type="checkbox";
-					chk.checked = true;
+					chk.checked = defaultChecked;
 					label.appendChild(chk);
 					label.appendChild(document.createTextNode(status));
 					div.appendChild(label);
@@ -552,12 +569,12 @@
 							}
 						}
 					}
-					
+
 					const selBoss = document.getElementById('boss');
 					for ( let boss of data.bosses ) {
 						const opt = document.createElement('option');
 						opt.value=boss[0];
-						opt.textContent = boss[1].name + ' (' + formatStars(boss[1].tier) + ')';
+						opt.textContent = boss[1].name + (boss[1].tier > 0 ? ' (' + formatStars(boss[1].tier) + ')' : '');
 						selBoss.appendChild(opt);
 					}
 					selBoss.selectedIndex = -1;
@@ -652,17 +669,23 @@
 					["Accessory", []]
 				]);
 
+				const preventableEffects = new Set();
+
 				for (let item of allItems) {
 					if (item.prevents && item.prevents.length > 0) {
 						const slot = itemsByType.get(item.type);
 						if (slot) {
 							slot.push({
+								id: item.id,
 								name: item.name,
 								tier: item.tier,
 								prevents: item.prevents,
 								equipped_by: item.equipped_by,
 								two_handed: item.two_handed ? item.two_handed : undefined,
 							});
+							for (let effect of item.prevents) {
+								preventableEffects.add(effect);
+							}
 						}
 					}
 				}
@@ -673,6 +696,16 @@
 				for ( let x of itemOutput ) {
 					x[1].sort((a, b) => a.name.localeCompare(b.name));
 				}
+
+				// Add special entries
+				bossOutput.unshift([-1, {
+					name: "[All preventable effects]",
+					tier: 0,
+					causes: Array.from(preventableEffects.values()),
+					unselected: true
+				}]);
+				
+
 
 				const output = {
 					bosses: bossOutput,
